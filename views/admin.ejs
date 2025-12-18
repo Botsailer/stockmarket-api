@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Key Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <h1 class="mb-4">API Key Management</h1>
+        
+        <div class="card mb-4">
+            <div class="card-header">Server Configuration</div>
+            <div class="card-body">
+                <form action="/admin/config" method="POST" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Server URL (for Docs)</label>
+                        <input type="text" name="serverUrl" class="form-control" value="<%= config.serverUrl %>" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Admin Password</label>
+                        <input type="text" name="adminPassword" class="form-control" value="<%= config.adminPassword %>" required>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-warning w-100">Update Config</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Server Actions</div>
+            <div class="card-body d-flex gap-2">
+                <form action="/admin/restart" method="POST">
+                    <button type="submit" class="btn btn-info text-white">Soft Restart (Reconnect TV)</button>
+                </form>
+                <form action="/admin/kill" method="POST" onsubmit="return confirm('This will stop the server. Ensure you have a process manager (like PM2) to restart it automatically. Continue?');">
+                    <button type="submit" class="btn btn-danger">Hard Restart (Process Exit)</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Create New Key</div>
+            <div class="card-body">
+                <form action="/admin/create" method="POST" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Owner Name</label>
+                        <input type="text" name="owner" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Allowed Domains (comma separated, * for all)</label>
+                        <input type="text" name="domains" class="form-control" value="*" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Rate Limit (req/min)</label>
+                        <input type="number" name="rateLimit" class="form-control" value="60" required>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">Generate Key</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Active Keys</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>API Key</th>
+                                <th>Domains</th>
+                                <th>Rate Limit</th>
+                                <th>Created At</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% keys.forEach(function(k) { %>
+                            <tr>
+                                <td><%= k.owner %></td>
+                                <td><code><%= k.key %></code></td>
+                                <td><%= k.domains.join(', ') %></td>
+                                <td><%= k.rateLimit %></td>
+                                <td><%= new Date(k.createdAt).toLocaleDateString() %></td>
+                                <td>
+                                    <form action="/admin/delete" method="POST" onsubmit="return confirm('Are you sure?');">
+                                        <input type="hidden" name="key" value="<%= k.key %>">
+                                        <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            <% }); %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <a href="/docs" class="btn btn-secondary" target="_blank">View API Documentation</a>
+        </div>
+    </div>
+</body>
+</html>
