@@ -21,7 +21,7 @@ const io = new Server(server, {
   }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 4639;
 
 // Middleware
 app.use(cors());
@@ -33,6 +33,10 @@ app.set('views', path.join(__dirname, '../views'));
 // Routes
 app.use('/api/v1', apiRoutes);
 app.use('/admin', adminRoutes);
+
+app.get('/', (_req, res) => {
+  res.redirect('/docs');
+});
 
 app.get('/docs', (_req, res) => {
   res.render('docs', { serverUrl: configService.get().serverUrl });
@@ -48,7 +52,68 @@ app.get('/openapi.json', (_req, res) => {
     info: {
       title: 'Market Data API',
       version: '1.0.0',
-      description: 'Real-time and Snapshot Market Data API'
+      description: `
+# Overview
+This API provides market data via two interfaces:
+1. **REST API**: On-demand snapshots and historical OHLC candles.
+2. **WebSocket API**: Real-time price streaming via Socket.IO.
+
+---
+
+# WebSocket API (Real-time)
+**Endpoint**: \`WS ${config.serverUrl}\`
+
+## Connection
+Connect using a Socket.IO client (v4.x).
+**Auth**: Provide your API Key in the \`auth\` object or query params.
+
+\`\`\`javascript
+import { io } from "socket.io-client";
+
+const socket = io('${config.serverUrl}', {
+  auth: { token: 'YOUR_API_KEY' }
+});
+
+socket.on('connect', () => {
+  console.log('Connected!');
+  socket.emit('subscribe', 'BINANCE:BTCUSDT');
+});
+
+socket.on('price', (data) => {
+  console.log('Price Update:', data);
+});
+\`\`\`
+
+## Events
+
+### Client -> Server
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| \`subscribe\` | \`string\` | Symbol to subscribe to (e.g., "BINANCE:BTCUSDT") |
+| \`unsubscribe\` | \`string\` | Symbol to unsubscribe from |
+
+### Server -> Client
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| \`price\` | \`object\` | Real-time price update |
+| \`error\` | \`object\` | Error message |
+
+## Price Payload Example
+\`\`\`json
+{
+  "symbol": "BINANCE:BTCUSDT",
+  "data": {
+    "price": 86500.00,
+    "change": 120.5,
+    "change_percent": 0.15,
+    "volume": 1024.5,
+    "timestamp": 1702920000000
+  }
+}
+\`\`\`
+      `
     },
     components: {
       securitySchemes: {

@@ -160,7 +160,9 @@ api_keys.json
 
 ## Configuration
 
-- The server runs on port 3001 by default.
+- The server runs on port 4639 by default.
+- You can change the port by setting the \`PORT\` environment variable.
+  e.g., \`PORT=8080 npm start\`
 - Access the Admin Panel at \`/admin\` (Default: admin/admin).
 - API Documentation is available at \`/docs\`.
 `);

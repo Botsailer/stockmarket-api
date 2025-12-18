@@ -9,7 +9,7 @@ import { getPrototypeChain } from './utils';
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
-const port = 3000;
+const port = 4639;
 
 // Initialize TradingView API
 const tvAPI = new TradingViewAPI();
