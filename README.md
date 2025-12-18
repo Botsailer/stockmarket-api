@@ -22,12 +22,25 @@ pnpm add tradingview-scraper
 
 - brand-shiny-new typescript typings
 - real-time data freshly ~~stolen~~ borrowed from TradingView's socket.io interface
+- historical data (candles) support
 - almost 100% success rate of ~~stealing~~ borrowing data
 - 1:1 accuracy of ~~stolen~~ borrowed data _#confirmed_
 - HTTP Origin header spoofing so nobody will notice anything suspicious
 - okay, let's finally go into the _serious mode_, shall we?
 
 ## Usage
+
+### REST API
+
+#### Get Quote
+`GET /api/v1/quote?symbol=BINANCE:BTCUSDT`
+
+#### Get History
+`GET /api/v1/history?symbol=BINANCE:BTCUSDT&timeframe=1D&count=100`
+
+### WebSocket
+
+Connect to the root URL with Socket.IO.
 
 Coming soon, for now just check [Examples](./examples).
 

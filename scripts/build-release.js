@@ -54,7 +54,7 @@ function obfuscate() {
       deadCodeInjection: true,
       deadCodeInjectionThreshold: 0.4,
       debugProtection: false, // Set to true if you want to prevent debugger attachment
-      disableConsoleOutput: true, // Removes console.log, console.error etc.
+      disableConsoleOutput: true, // Changed to false to keep debug logs
       identifierNamesGenerator: 'hexadecimal',
       log: false,
       numbersToExpressions: true,

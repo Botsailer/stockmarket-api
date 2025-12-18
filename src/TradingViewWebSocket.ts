@@ -66,6 +66,12 @@ export class TradingViewWebSocket extends EventEmitter {
       return;
     }
     const data = packet.data;
+    
+    // Log all packet types for debugging
+    if (data.m) {
+        // console.log(`[WS DEBUG] RX Packet: ${data.m}`);
+    }
+
     // Handle session packet
     if (data.session_id) {
       this.setAuthToken(TradingViewWebSocket.UNAUTHORIZED_USER_TOKEN);
@@ -88,10 +94,11 @@ export class TradingViewWebSocket extends EventEmitter {
       data.m &&
       data.m === 'timescale_update' &&
       typeof data.p === 'object' &&
-      data.p.length > 1 &&
-      data.p[0] === this.chartSession
+      data.p.length > 1
     ) {
-      this.emit('chart_data', data.p[1]);
+      // console.log(`[WS DEBUG] timescale_update for session ${data.p[0]}`);
+      // Emit chart data for ANY session, passing the session ID as the second argument
+      this.emit('chart_data', data.p[1], data.p[0]);
     }
   }
 
@@ -104,17 +111,29 @@ export class TradingViewWebSocket extends EventEmitter {
     this.wsSend('quote_create_session', [this.quoteSession]);
   }
 
-  private createChartSession() {
-    this.chartSession = 'cs_' + randomstring.generate({ length: 12, charset: 'alphabetic' });
-    this.wsSend('chart_create_session', [this.chartSession, '']);
+  public createChartSession(sessionId?: string) {
+    if (sessionId) {
+        this.wsSend('chart_create_session', [sessionId, '']);
+    } else {
+        this.chartSession = 'cs_' + randomstring.generate({ length: 12, charset: 'alphabetic' });
+        this.wsSend('chart_create_session', [this.chartSession, '']);
+    }
   }
 
-  public resolveSymbol(symbol: string, symbolId: string) {
-    this.wsSend('resolve_symbol', [this.chartSession, symbolId, symbol]);
+  public resolveSymbol(symbol: string, symbolId: string, sessionId?: string) {
+    this.wsSend('resolve_symbol', [sessionId || this.chartSession, symbolId, symbol]);
   }
 
-  public createSeries(seriesId: string, symbolId: string, timeframe: string, count: number) {
-    this.wsSend('create_series', [this.chartSession, seriesId, 's1', symbolId, timeframe, count]);
+  public createSeries(seriesId: string, symbolId: string, timeframe: string, count: number, sessionId?: string) {
+    this.wsSend('create_series', [sessionId || this.chartSession, seriesId, 's1', symbolId, timeframe, count]);
+  }
+
+  public requestMoreData(seriesId: string, count: number, sessionId?: string) {
+    this.wsSend('request_more_data', [sessionId || this.chartSession, seriesId, count]);
+  }
+
+  public setRange(seriesId: string, from: number, to: number, sessionId?: string) {
+    this.wsSend('set_range', [sessionId || this.chartSession, seriesId, from, to]);
   }
 
   private setQuoteFields(fields: string[]) {

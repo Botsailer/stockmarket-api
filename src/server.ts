@@ -169,6 +169,68 @@ socket.on('price', (data) => {
               }
             }
           }
+        },
+      },
+      '/api/v1/history': {
+        get: {
+          summary: 'Get Historical Data (Candles)',
+          parameters: [
+            {
+              name: 'symbol',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', example: 'BINANCE:BTCUSDT' }
+            },
+            {
+              name: 'timeframe',
+              in: 'query',
+              schema: { type: 'string', default: '1D' },
+              description: 'Timeframe for the data. Examples: 1D, 1m, 5m, 15m, 1h, 4h, 1W, 1M.'
+            },
+            {
+              name: 'count',
+              in: 'query',
+              schema: { type: 'integer', default: 100 },
+              description: 'Number of candles to retrieve (ignored if start is provided).'
+            },
+            {
+              name: 'start',
+              in: 'query',
+              schema: { type: 'string', format: 'date-time' },
+              description: 'Start date for the data (e.g. 2009-02-17). Overrides count.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      symbol: { type: 'string' },
+                      timeframe: { type: 'string' },
+                      count: { type: 'integer' },
+                      data: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            timestamp: { type: 'string' },
+                            open: { type: 'number' },
+                            high: { type: 'number' },
+                            low: { type: 'number' },
+                            close: { type: 'number' },
+                            volume: { type: 'number' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

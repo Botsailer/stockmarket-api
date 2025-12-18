@@ -132,4 +132,66 @@ router.get('/quote', async (req, res) => {
   }
 });
 
+router.get('/history', async (req, res) => {
+  const symbol = req.query.symbol as string;
+  const timeframe = req.query.timeframe as string || '1D';
+  const count = parseInt(req.query.count as string) || 100;
+  const start = req.query.start as string;
+  const end = req.query.end as string;
+
+  if (!symbol) {
+    res.status(400).json({ error: 'Symbol is required' });
+    return;
+  }
+
+  try {
+    let startDate: Date | undefined;
+    if (start) {
+        startDate = new Date(start);
+        if (isNaN(startDate.getTime())) {
+            res.status(400).json({ error: 'Invalid start date format' });
+            return;
+        }
+        console.log(`[DEBUG] Route: start param received: ${start}, parsed: ${startDate.toISOString()}`);
+    }
+
+    let endDate: Date | undefined;
+    if (end) {
+        endDate = new Date(end);
+        if (isNaN(endDate.getTime())) {
+            res.status(400).json({ error: 'Invalid end date format' });
+            return;
+        }
+        console.log(`[DEBUG] Route: end param received: ${end}, parsed: ${endDate.toISOString()}`);
+    }
+
+    const candles = await tvAPI.getHistory(symbol, timeframe, count, startDate, endDate);
+    if (!candles) {
+      res.status(404).json({ error: 'No data found for symbol/timeframe', symbol, timeframe });
+      return;
+    }
+    
+    // Filter if start/end date was provided
+    let filteredCandles = candles;
+    if (startDate || endDate) {
+        filteredCandles = candles.filter(c => {
+            let valid = true;
+            if (startDate) valid = valid && c.timestamp >= startDate.getTime();
+            if (endDate) valid = valid && c.timestamp <= endDate.getTime();
+            return valid;
+        });
+    }
+
+    res.json({
+      symbol,
+      timeframe,
+      count: filteredCandles.length,
+      data: filteredCandles
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch history data', details: e });
+  }
+});
+
 export default router;
