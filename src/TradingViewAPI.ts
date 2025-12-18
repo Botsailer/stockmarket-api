@@ -88,7 +88,7 @@ export class TradingViewAPI {
           ticker.removeListener('update', onUpdate);
           reject('Timed out.');
         }
-      }, 3000);
+      }, 5000); // Increased timeout to 5 seconds
     });
   }
 

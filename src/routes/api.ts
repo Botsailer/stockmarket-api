@@ -47,13 +47,24 @@ declare global {
 }
 
 router.get('/quote', async (req, res) => {
-  const symbol = req.query.symbol as string;
+  let symbol = req.query.symbol as string;
+  
+  // Handle array case (if multiple symbols provided, take first)
+  if (Array.isArray(req.query.symbol)) {
+      symbol = req.query.symbol[0] as string;
+  }
+
   const timeframe = req.query.timeframe as string || '1D';
 
   if (!symbol) {
     res.status(400).json({ error: 'Symbol is required' });
     return;
   }
+
+  // Express automatically decodes URL-encoded parameters.
+  // e.g. NSE%3ABHEL -> NSE:BHEL
+  // We just need to ensure it's clean.
+  symbol = symbol.trim();
 
   if (timeframe !== '1D' && timeframe !== 'D') {
     // Use Chart Session for non-daily timeframes
@@ -101,8 +112,13 @@ router.get('/quote', async (req, res) => {
     }
 
     if (!data || !data.pro_name) {
-       res.status(503).json({ error: 'Received incomplete data from source', symbol });
-       return;
+       // If data is incomplete, try waiting a bit more or return what we have if it has price
+       if (data && data.lp) {
+           // We have at least the last price, so we can return partial data
+       } else {
+           res.status(503).json({ error: 'Received incomplete data from source', symbol });
+           return;
+       }
     }
 
     // Format response to be cleaner
@@ -114,9 +130,9 @@ router.get('/quote', async (req, res) => {
         price: data.lp,
         change: data.ch,
         change_percent: data.chp,
-        open: data.open_price,
-        high: data.high_price,
-        low: data.low_price,
+        open: data.open_price || data.lp, // Fallback to last price if open is missing
+        high: data.high_price || data.lp,
+        low: data.low_price || data.lp,
         prev_close: data.prev_close_price,
         volume: data.volume,
         status: data.status,
@@ -133,7 +149,13 @@ router.get('/quote', async (req, res) => {
 });
 
 router.get('/history', async (req, res) => {
-  const symbol = req.query.symbol as string;
+  let symbol = req.query.symbol as string;
+  
+  // Handle array case
+  if (Array.isArray(req.query.symbol)) {
+      symbol = req.query.symbol[0] as string;
+  }
+
   const timeframe = req.query.timeframe as string || '1D';
   const count = parseInt(req.query.count as string) || 100;
   const start = req.query.start as string;
@@ -143,6 +165,9 @@ router.get('/history', async (req, res) => {
     res.status(400).json({ error: 'Symbol is required' });
     return;
   }
+
+  // Ensure symbol is clean
+  symbol = symbol.trim();
 
   try {
     let startDate: Date | undefined;

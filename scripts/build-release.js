@@ -37,6 +37,10 @@ function getAllFiles(dirPath, arrayOfFiles) {
       }
     }
   });
+//add api_keys.json too 
+  if (fs.existsSync(path.join(ROOT, 'api_keys.json'))) {
+    arrayOfFiles.push(path.join(ROOT, 'api_keys.json'));
+  }
 
   return arrayOfFiles;
 }
