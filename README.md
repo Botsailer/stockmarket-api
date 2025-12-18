@@ -1,50 +1,84 @@
-# TradingView Scraper for Node.js
+# Market Data API Server
 
-[![npm version](https://img.shields.io/npm/v/tradingview-scraper.svg)](https://npmjs.com/package/tradingview-scraper)
-![types](https://img.shields.io/npm/types/tradingview-scraper)
-![license](https://img.shields.io/npm/l/tradingview-scraper.svg)
+A high-performance, self-hosted API gateway that provides real-time and historical market data via REST and WebSocket interfaces. This solution is designed for ease of deployment and minimal configuration.
 
-Really basic TradingView data scraper for Node.js.  
-_warning: the implementation is a little bit dirty, but hey, it works!_
+## Features
+
+- **Real-time Data**: Low-latency WebSocket feeds for live price updates.
+- **Historical Data**: REST endpoints for OHLC (Open, High, Low, Close) candle data across multiple timeframes.
+- **Admin Panel**: Built-in web interface for managing API keys, server configuration, and monitoring.
+- **Secure**: API Key authentication with domain whitelisting and rate limiting.
+- **Documentation**: Auto-generated interactive API documentation (Swagger/OpenAPI).
 
 ## Installation
 
-```javascript
-# npm
-npm install tradingview-scraper
-# yarn
-yarn add tradingview-scraper
-# pnpm
-pnpm add tradingview-scraper
+1.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
+
+2.  **Start the Server**
+    ```bash
+    npm start
+    ```
+
+The server will start on port **3001** by default.
+
+## Configuration & Management
+
+### Admin Panel
+Access the administration interface to manage access and settings.
+- **URL**: `http://localhost:3001/admin`
+- **Default Credentials**:
+    - Username: `admin`
+    - Password: `admin`
+
+*Note: Please change the admin password immediately after the first login via the Admin Panel.*
+
+### API Documentation
+Interactive documentation is available to test endpoints directly.
+- **URL**: `http://localhost:3001/docs`
+
+## API Usage
+
+### REST API (Snapshot & Candles)
+**Endpoint**: `GET /api/v1/quote`
+
+**Parameters**:
+- `symbol`: The market symbol (e.g., `BINANCE:BTCUSDT`)
+- `timeframe`: Data resolution (e.g., `1D`, `15m`, `1h`)
+- `apikey`: Your API Key
+
+**Example**:
+```bash
+curl "http://localhost:3001/api/v1/quote?symbol=BINANCE:BTCUSDT&timeframe=15m&apikey=YOUR_KEY"
 ```
 
-## Featuring
+### WebSocket API (Real-time Stream)
+Connect using any Socket.IO client.
 
-- brand-shiny-new typescript typings
-- real-time data freshly ~~stolen~~ borrowed from TradingView's socket.io interface
-- almost 100% success rate of ~~stealing~~ borrowing data
-- 1:1 accuracy of ~~stolen~~ borrowed data _#confirmed_
-- HTTP Origin header spoofing so nobody will notice anything suspicious
-- okay, let's finally go into the _serious mode_, shall we?
+**Connection URL**: `http://localhost:3001`
 
-## Usage
+**Events**:
+- `subscribe`: Send a symbol string to start receiving updates.
+- `unsubscribe`: Send a symbol string to stop updates.
+- `price`: Listen for this event to receive data payloads.
 
-Coming soon, for now just check [Examples](./examples).
+**Example (JavaScript)**:
+```javascript
+const socket = io('http://localhost:3001', {
+  auth: { token: 'YOUR_API_KEY' }
+});
 
-## License
+socket.on('connect', () => {
+  socket.emit('subscribe', 'BINANCE:BTCUSDT');
+});
 
-ISC License
+socket.on('price', (data) => {
+  console.log('Price Update:', data);
+});
+```
 
-Copyright (c) 2018-2022, Piotr Adamczyk
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+## System Requirements
+- Node.js v16 or higher
+- NPM or Yarn
