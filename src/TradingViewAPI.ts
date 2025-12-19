@@ -6,6 +6,77 @@ export class TradingViewAPI {
   public ws: TradingViewWebSocket = new TradingViewWebSocket();
   private isSetup = false;
 
+  // Reconnection logic variables
+  private activeApiCalls = 0;
+  private reconnectInterval: NodeJS.Timeout | null = null;
+  private pendingReconnect = false;
+  private static RECONNECT_INTERVAL_MS = 60000; // 1 minute
+
+  // Increment active API call counter
+  private incrementApiCalls(): void {
+    this.activeApiCalls++;
+    console.log(`[API] Active API calls: ${this.activeApiCalls}`);
+  }
+
+  // Decrement active API call counter and trigger reconnect if pending
+  private async decrementApiCalls(): Promise<void> {
+    this.activeApiCalls--;
+    console.log(`[API] Active API calls: ${this.activeApiCalls}`);
+    
+    // If no more active calls and reconnect is pending, do it now
+    if (this.activeApiCalls === 0 && this.pendingReconnect) {
+      console.log('[API] All API calls completed. Executing pending reconnect...');
+      this.pendingReconnect = false;
+      await this.reconnectWebSocket();
+    }
+  }
+
+  // Reconnect the WebSocket
+  private async reconnectWebSocket(): Promise<void> {
+    console.log('[API] Reconnecting WebSocket...');
+    try {
+      this.ws.disconnect();
+      await this.ws.connect();
+      console.log('[API] WebSocket reconnected successfully');
+    } catch (e) {
+      console.error('[API] WebSocket reconnection failed:', e);
+    }
+  }
+
+  // Schedule reconnect - either do it now or mark as pending
+  private async scheduleReconnect(): Promise<void> {
+    if (this.activeApiCalls > 0) {
+      console.log(`[API] API calls in progress (${this.activeApiCalls}). Marking reconnect as pending...`);
+      this.pendingReconnect = true;
+    } else {
+      console.log('[API] No active API calls. Reconnecting now...');
+      await this.reconnectWebSocket();
+    }
+  }
+
+  // Start the periodic reconnection timer
+  private startReconnectTimer(): void {
+    if (this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+    }
+    
+    this.reconnectInterval = setInterval(async () => {
+      console.log('[API] Periodic reconnect check triggered...');
+      await this.scheduleReconnect();
+    }, TradingViewAPI.RECONNECT_INTERVAL_MS);
+    
+    console.log(`[API] Reconnect timer started (every ${TradingViewAPI.RECONNECT_INTERVAL_MS / 1000}s)`);
+  }
+
+  // Stop the periodic reconnection timer
+  private stopReconnectTimer(): void {
+    if (this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+      this.reconnectInterval = null;
+      console.log('[API] Reconnect timer stopped');
+    }
+  }
+
   public async setup() {
     if (this.isSetup) {
       return;
@@ -34,29 +105,40 @@ export class TradingViewAPI {
       });
     });
     await this.ws.connect();
+    
+    // Start the periodic reconnection timer
+    this.startReconnectTimer();
   }
 
   public async cleanup() {
+    this.stopReconnectTimer();
     this.ws.disconnect();
     this.isSetup = false;
     this.subscriptionMap.clear();
+    this.activeApiCalls = 0;
+    this.pendingReconnect = false;
   }
 
   public async getTicker(simpleOrProName: string): Promise<TickerSubscription> {
-    const tickers = this.subscriptionMap.get(simpleOrProName);
-    if (tickers && tickers.size > 0) {
-      return tickers.values().next().value;
-    }
-
-    const ticker = new TickerSubscription(this, simpleOrProName);
+    this.incrementApiCalls();
     try {
-      await ticker.fetch();
-    } catch (e) {
-      // If fetch fails (timeout), we still return the ticker so the user can listen for future updates
-      // or retry. The error is logged but doesn't crash the flow.
-      console.warn(`Initial fetch timed out for ${simpleOrProName}, but subscription is active.`);
+      const tickers = this.subscriptionMap.get(simpleOrProName);
+      if (tickers && tickers.size > 0) {
+        return tickers.values().next().value;
+      }
+
+      const ticker = new TickerSubscription(this, simpleOrProName);
+      try {
+        await ticker.fetch();
+      } catch (e) {
+        // If fetch fails (timeout), we still return the ticker so the user can listen for future updates
+        // or retry. The error is logged but doesn't crash the flow.
+        console.warn(`Initial fetch timed out for ${simpleOrProName}, but subscription is active.`);
+      }
+      return ticker;
+    } finally {
+      await this.decrementApiCalls();
     }
-    return ticker;
   }
 
   public async ensureRegistered(ticker: TickerSubscription): Promise<void> {
@@ -139,6 +221,7 @@ export class TradingViewAPI {
   }
 
   public async getCandle(symbol: string, timeframe: string): Promise<any> {
+    this.incrementApiCalls();
     const symbolId = 'sym_' + Math.floor(Math.random() * 100000);
     const seriesId = 'ser_' + Math.floor(Math.random() * 100000);
     const formattedTimeframe = this.formatTimeframe(timeframe);
@@ -155,6 +238,7 @@ export class TradingViewAPI {
           // Format: { v: [time, open, high, low, close, volume] }
           // TV sends: { i: 0, v: [ ... ] }
           if (lastCandle && lastCandle.v) {
+             this.decrementApiCalls();
              resolve({
                timestamp: lastCandle.v[0] * 1000, // TV uses seconds
                open: lastCandle.v[1],
@@ -164,6 +248,7 @@ export class TradingViewAPI {
                volume: lastCandle.v[5]
              });
           } else {
+             this.decrementApiCalls();
              resolve(null);
           }
         }
@@ -173,6 +258,7 @@ export class TradingViewAPI {
       
       // Ensure we are connected
       if (!this.ws) {
+         this.decrementApiCalls();
          reject('WebSocket not initialized');
          return;
       }
@@ -182,18 +268,21 @@ export class TradingViewAPI {
         this.ws.createSeries(seriesId, symbolId, formattedTimeframe, 10); 
       } catch (e) {
         this.ws.removeListener('chart_data', onChartData);
+        this.decrementApiCalls();
         reject(e);
         return;
       }
       
       setTimeout(() => {
         this.ws.removeListener('chart_data', onChartData);
+        this.decrementApiCalls();
         reject('Chart fetch timed out');
       }, 10000);
     });
   }
 
   public async getHistory(symbol: string, timeframe: string, count: number = 100, start?: Date, end?: Date): Promise<any[]> {
+    this.incrementApiCalls();
     const chartSession = 'cs_' + Math.floor(Math.random() * 1000000); // Unique session for this request
     const symbolId = 'sym_' + Math.floor(Math.random() * 100000);
     const seriesId = 'ser_' + Math.floor(Math.random() * 100000);
@@ -297,6 +386,7 @@ export class TradingViewAPI {
               resolveTimeout = setTimeout(() => {
                   console.log(`[DEBUG] Range strategy used. Assuming all available data received. Resolving.`);
                   this.ws.removeListener('chart_data', onChartData);
+                  this.decrementApiCalls();
                   resolve(allCandles);
               }, 500); // Wait 500ms for more data
               return;
@@ -308,6 +398,7 @@ export class TradingViewAPI {
              console.log(`[DEBUG] Target reached. Resolving.`);
              if (resolveTimeout) clearTimeout(resolveTimeout);
              this.ws.removeListener('chart_data', onChartData);
+             this.decrementApiCalls();
              resolve(allCandles.slice(-count)); // Return the requested amount (latest N)
           } else {
              // We need more!
@@ -315,6 +406,7 @@ export class TradingViewAPI {
                  console.log(`[DEBUG] No new data received. We might be at the limit. Resolving.`);
                  if (resolveTimeout) clearTimeout(resolveTimeout);
                  this.ws.removeListener('chart_data', onChartData);
+                 this.decrementApiCalls();
                  resolve(allCandles);
                  return;
              }
@@ -329,6 +421,7 @@ export class TradingViewAPI {
       
       // Ensure we are connected
       if (!this.ws) {
+         this.decrementApiCalls();
          reject('WebSocket not initialized');
          return;
       }
@@ -352,6 +445,7 @@ export class TradingViewAPI {
 
       } catch (e) {
         this.ws.removeListener('chart_data', onChartData);
+        this.decrementApiCalls();
         reject(e);
         return;
       }
@@ -359,6 +453,7 @@ export class TradingViewAPI {
       // Increase timeout for large fetches
       setTimeout(() => {
         this.ws.removeListener('chart_data', onChartData);
+        this.decrementApiCalls();
         if (allCandles.length > 0) {
             console.log(`[DEBUG] Timeout reached, returning partial data (${allCandles.length})`);
             resolve(allCandles);
