@@ -6,6 +6,13 @@ export class TradingViewAPI {
   public ws: TradingViewWebSocket = new TradingViewWebSocket();
   private isSetup = false;
 
+  // Create a fresh WebSocket connection for one-time chart requests
+  private async createFreshChartConnection(): Promise<TradingViewWebSocket> {
+    const freshWs = new TradingViewWebSocket();
+    await freshWs.connect();
+    return freshWs;
+  }
+
   // Reconnection logic variables
   private activeApiCalls = 0;
   private reconnectInterval: NodeJS.Timeout | null = null;
@@ -226,14 +233,39 @@ export class TradingViewAPI {
     const seriesId = 'ser_' + Math.floor(Math.random() * 100000);
     const formattedTimeframe = this.formatTimeframe(timeframe);
     
+    // Create a fresh WebSocket connection for this request
+    let freshWs: TradingViewWebSocket | null = null;
+    
+    try {
+      freshWs = await this.createFreshChartConnection();
+      console.log('[API] Fresh WebSocket created for getCandle');
+    } catch (e) {
+      this.decrementApiCalls();
+      throw new Error('Failed to create WebSocket connection: ' + e);
+    }
+    
+    const chartWs = freshWs;
+    
     return new Promise((resolve, reject) => {
+      let resolved = false;
+      
+      const cleanup = () => {
+        if (chartWs) {
+          chartWs.removeListener('chart_data', onChartData);
+          chartWs.disconnect();
+          console.log('[API] Fresh WebSocket closed for getCandle');
+        }
+      };
+      
       const onChartData = (data: any) => {
+        if (resolved) return;
+        
         if (data[seriesId] && data[seriesId].s) {
           const candles = data[seriesId].s;
           const lastCandle = candles[candles.length - 1];
           
-          // Cleanup
-          this.ws.removeListener('chart_data', onChartData);
+          resolved = true;
+          cleanup();
           
           // Format: { v: [time, open, high, low, close, volume] }
           // TV sends: { i: 0, v: [ ... ] }
@@ -254,29 +286,26 @@ export class TradingViewAPI {
         }
       };
 
-      this.ws.on('chart_data', onChartData);
-      
-      // Ensure we are connected
-      if (!this.ws) {
-         this.decrementApiCalls();
-         reject('WebSocket not initialized');
-         return;
-      }
+      chartWs.on('chart_data', onChartData);
 
       try {
-        this.ws.resolveSymbol(symbol, symbolId);
-        this.ws.createSeries(seriesId, symbolId, formattedTimeframe, 10); 
+        chartWs.resolveSymbol(symbol, symbolId);
+        chartWs.createSeries(seriesId, symbolId, formattedTimeframe, 10); 
       } catch (e) {
-        this.ws.removeListener('chart_data', onChartData);
+        resolved = true;
+        cleanup();
         this.decrementApiCalls();
         reject(e);
         return;
       }
       
       setTimeout(() => {
-        this.ws.removeListener('chart_data', onChartData);
-        this.decrementApiCalls();
-        reject('Chart fetch timed out');
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          this.decrementApiCalls();
+          reject('Chart fetch timed out');
+        }
       }, 10000);
     });
   }
@@ -302,14 +331,38 @@ export class TradingViewAPI {
 
     console.log(`[DEBUG] getHistory: symbol=${symbol}, timeframe=${timeframe}, start=${start}, end=${end}, calculated_count=${count}`);
 
+    // Create a fresh WebSocket connection for this request
+    let freshWs: TradingViewWebSocket | null = null;
+    
+    try {
+      freshWs = await this.createFreshChartConnection();
+      console.log('[API] Fresh WebSocket created for getHistory');
+    } catch (e) {
+      this.decrementApiCalls();
+      throw new Error('Failed to create WebSocket connection: ' + e);
+    }
+    
+    const chartWs = freshWs;
+
     return new Promise((resolve, reject) => {
       let allCandles: any[] = [];
       let resolveTimeout: NodeJS.Timeout | null = null;
       let rangeRequestSent = false;
+      let resolved = false;
+      
+      const cleanup = () => {
+        if (resolveTimeout) clearTimeout(resolveTimeout);
+        if (chartWs) {
+          chartWs.removeListener('chart_data', onChartData);
+          chartWs.disconnect();
+          console.log('[API] Fresh WebSocket closed for getHistory');
+        }
+      };
 
       const onChartData = (data: any, sessionId: string) => {
         // Only process data for OUR session
         if (sessionId !== chartSession) return;
+        if (resolved) return;
 
         console.log(`[DEBUG] onChartData received for session ${sessionId}. Keys: ${Object.keys(data).join(', ')}`);
 
@@ -376,7 +429,7 @@ export class TradingViewAPI {
                   if (from < 0) from = 0;
 
                   console.log(`[DEBUG] Setting range: ${from} to ${to} (Count: ${count})`);
-                  this.ws.setRange(seriesId, from, to, chartSession);
+                  chartWs.setRange(seriesId, from, to, chartSession);
                   return; // Wait for next data packet
               }
 
@@ -384,8 +437,10 @@ export class TradingViewAPI {
               // Debounce resolution to catch multiple packets
               if (resolveTimeout) clearTimeout(resolveTimeout);
               resolveTimeout = setTimeout(() => {
+                  if (resolved) return;
+                  resolved = true;
                   console.log(`[DEBUG] Range strategy used. Assuming all available data received. Resolving.`);
-                  this.ws.removeListener('chart_data', onChartData);
+                  cleanup();
                   this.decrementApiCalls();
                   resolve(allCandles);
               }, 500); // Wait 500ms for more data
@@ -395,41 +450,36 @@ export class TradingViewAPI {
           // Count Strategy Logic
           if (allCandles.length >= count) {
              // We have enough!
+             if (resolved) return;
+             resolved = true;
              console.log(`[DEBUG] Target reached. Resolving.`);
-             if (resolveTimeout) clearTimeout(resolveTimeout);
-             this.ws.removeListener('chart_data', onChartData);
+             cleanup();
              this.decrementApiCalls();
              resolve(allCandles.slice(-count)); // Return the requested amount (latest N)
           } else {
              // We need more!
              if (allCandles.length - prevLength === 0 && prevLength > 0) {
+                 if (resolved) return;
+                 resolved = true;
                  console.log(`[DEBUG] No new data received. We might be at the limit. Resolving.`);
-                 if (resolveTimeout) clearTimeout(resolveTimeout);
-                 this.ws.removeListener('chart_data', onChartData);
+                 cleanup();
                  this.decrementApiCalls();
                  resolve(allCandles);
                  return;
              }
              
              console.log(`[DEBUG] Requesting more data...`);
-             this.ws.requestMoreData(seriesId, 2000, chartSession);
+             chartWs.requestMoreData(seriesId, 2000, chartSession);
           }
         }
       };
 
-      this.ws.on('chart_data', onChartData);
-      
-      // Ensure we are connected
-      if (!this.ws) {
-         this.decrementApiCalls();
-         reject('WebSocket not initialized');
-         return;
-      }
+      chartWs.on('chart_data', onChartData);
 
       try {
         // Create a temporary session for this request
-        this.ws.createChartSession(chartSession);
-        this.ws.resolveSymbol(symbol, symbolId, chartSession);
+        chartWs.createChartSession(chartSession);
+        chartWs.resolveSymbol(symbol, symbolId, chartSession);
         
         // Strategy: Use set_range if a specific date range (end date) is requested OR if count is large (>2000).
         // If only start is provided (and end is now), we can use createSeries(count) which fetches the latest N candles.
@@ -438,13 +488,14 @@ export class TradingViewAPI {
 
         // Always start with createSeries(1) to initialize if using range, or full count if not.
         if (useRange) {
-             this.ws.createSeries(seriesId, symbolId, formattedTimeframe, 1, chartSession);
+             chartWs.createSeries(seriesId, symbolId, formattedTimeframe, 1, chartSession);
         } else {
-             this.ws.createSeries(seriesId, symbolId, formattedTimeframe, count, chartSession); 
+             chartWs.createSeries(seriesId, symbolId, formattedTimeframe, count, chartSession); 
         }
 
       } catch (e) {
-        this.ws.removeListener('chart_data', onChartData);
+        resolved = true;
+        cleanup();
         this.decrementApiCalls();
         reject(e);
         return;
@@ -452,7 +503,9 @@ export class TradingViewAPI {
       
       // Increase timeout for large fetches
       setTimeout(() => {
-        this.ws.removeListener('chart_data', onChartData);
+        if (resolved) return;
+        resolved = true;
+        cleanup();
         this.decrementApiCalls();
         if (allCandles.length > 0) {
             console.log(`[DEBUG] Timeout reached, returning partial data (${allCandles.length})`);
